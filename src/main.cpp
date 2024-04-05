@@ -4,51 +4,40 @@
 #include <ESP8266WiFi.h>
 #include <string.h>
 #include <cstring>
-
-using namespace std;
+#include <EEPROM.h>
+#include <Configuration.h>
+#include "DeviceDiscoveryMessage.h"
+#include "StatusMessage.h"
 
 void callBack(char *topic, byte *payload, unsigned int length);
 
 // Servo servo;
 WiFiClient wifi;
+PubSubClient *mqttClient{nullptr};
 
-const char *ssid{"canci2G"};
-const char *pass{"tooDoo2e"};
 
-IPAddress mqttServer(192, 168, 1, 19);
-PubSubClient mqttClient(mqttServer, 1883, callBack, wifi);
-// const char *mqttServerAddress{"192.168.1.19"};
-
-int MQTT_CONNECT_TIMEOUT = 20;
-int WIFI_CONNECTION_TIMEOUT = 200;
-
-const char *MQTT_CLIENT_ID = "Fish Tank Feeder";
-const char *MQTT_ADVERTISE = "DENEME";
-// const char* MQTT_ADVERTISE = "{"+
-//   "\"icon\": \"mdi:memory\","+
-//   "\"availability_topic\": \"fish-feeder/history/a\","+
-//   "\"state_topic\": \"fish-feeder/history/s\","+
-//   "\"name\": \"Last feed time\","+
-//   "\"unique_id\": \"tank-fish-feeder\","+
-//   "\"payload_available\": \"ON\","+
-//   "\"payload_not_available\": \"OFF\","+
-//   "\"device\": {"+
-//     "\"identifiers\": ["+
-//       "\"tank-fish-feeder\""+
-//     "],"+
-//     "\"name\": \"Tank Fish Feeder\","+
-//     "\"model\": \"V1\","+
-//     "\"manufacturer\": \"CANCI\""+
-//   "}"+
-// "}";
+DeviceDiscoveryMessage *deviceBroadcast {nullptr};
+StatusMessage *statusMsg {nullptr};
+Configuration config;
 
 void setup()
 {
-  Serial.begin(9600);
-  Serial.println("Setting up");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin("canci2G", "tooDoo2e");
+  EEPROM.begin(512);
+  if (EEPROM.read(0) != 0)
+  { // Configuration is set to EEPROM, read from EEPROM
+    EEPROM.get(0, config);
+  }
 
+  deviceBroadcast = new DeviceDiscoveryMessage(config.deviceID);
+  statusMsg = new StatusMessage(config.deviceID);
+
+  Serial.begin(9600);
+
+  Serial.println("Setting up");
+  WiFi.mode(config.isAP ? WIFI_AP_STA : WIFI_STA);
+  WiFi.begin(config.ssid.c_str(), config.password.c_str());
+
+  int WIFI_CONNECTION_TIMEOUT = 30;
   while (WiFi.status() != WL_CONNECTED && WIFI_CONNECTION_TIMEOUT > 0)
   {
     delay(4000);
@@ -56,29 +45,27 @@ void setup()
     Serial.println("Waiting wifi connection...");
   }
 
-  Serial.println("Wifi connected");
-  Serial.print("IP addr:");
+  Serial.print("Wifi connected IP addr:");
   Serial.println(WiFi.localIP());
 
   // servo.attach(5);
   Serial.println("Connecting to mqtt server");
-  // mqttClient.setServer(mqttServerAddress, 1883);
-  // mqttClient.setCallback(callBack);
-  // Serial.println("Mqtt parameters are set!");
+  mqttClient = new PubSubClient(config.mqttServer, 1883, wifi);
 
-  while (!mqttClient.connected() && MQTT_CONNECT_TIMEOUT > 0)
+  int MQTT_CONNECT_TIMEOUT = 30;
+  while (!(*mqttClient).connected() && MQTT_CONNECT_TIMEOUT > 0)
   {
     Serial.println("Connecting... ");
-    mqttClient.connect(MQTT_CLIENT_ID, "canci", "Onur5758");
+    (*mqttClient).connect(config.deviceID.c_str(), config.mqttUser.c_str(), config.mqttPass.c_str());
     MQTT_CONNECT_TIMEOUT--;
     delay(5000);
   }
 
-  if (mqttClient.connected())
+  if ((*mqttClient).connected())
   {
-    mqttClient.setCallback(callBack);
-    mqttClient.publish("homeassistant/sensor/fish-feeder/config", MQTT_ADVERTISE);
-    mqttClient.subscribe("homeassistant/sensor/fish-feeder/action");
+    mqttClient->setCallback(callBack);
+    mqttClient->subscribe(("fish-feeder/"+config.deviceID+"/action").c_str());
+    deviceBroadcast->publish(mqttClient);
     Serial.println("Connected to mqtt server!");
   }
   else
@@ -92,7 +79,7 @@ void callBack(char *topic, byte *payload, unsigned int length)
   Serial.print("Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
-  for (int i = 0; i < length; i++)
+  for (size_t i = 0; i < length; i++)
   {
     Serial.print((char)payload[i]);
   }
@@ -101,7 +88,6 @@ void callBack(char *topic, byte *payload, unsigned int length)
 
 void loop()
 {
-
-  // mqttClient.publish("FishTankFeeder", "Heartbeat");
-  mqttClient.loop();
+  deviceBroadcast->publish(mqttClient);
+  mqttClient->loop();
 }
