@@ -117,18 +117,10 @@ void callBack(char *topic, byte *payload, unsigned int length)
 
     ISR_Servo.setPosition(servo, a.toInt());
   }
-
-  /* Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (size_t i = 0; i < length; i++)
-  {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println(); */
 }
 
 char serialInput[15];
+int restartTimer = 10800;
 
 void loop()
 {
@@ -136,6 +128,11 @@ void loop()
 
   mqttClient->loop();
   delay(1000);
+
+  restartTimer--;
+  if(restartTimer <= 0)
+    ESP.reset();
+  
 
   // Serial.readBytesUntil('\n',serialInput,4);
 

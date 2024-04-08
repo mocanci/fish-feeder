@@ -15,4 +15,4 @@ public:
 
     JsonDocument payload;
     void publish(PubSubClient *client);
-};
+};                 
